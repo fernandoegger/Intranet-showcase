@@ -1,4 +1,4 @@
-namespace Shared.Dto.Requests;
+namespace Shared.Dto.Responses;
 
 public class TokenReponse
 {

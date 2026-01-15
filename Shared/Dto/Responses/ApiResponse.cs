@@ -1,4 +1,4 @@
-namespace Shared;
+namespace Shared.Dto.Responses;
 
 public class ApiResponse<T>
 {
