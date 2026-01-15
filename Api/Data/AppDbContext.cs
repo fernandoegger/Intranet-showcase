@@ -1,14 +1,12 @@
 using System.Reflection;
 using Api.Data.Entities;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api.Data;
 
-public class AppDbContext : DbContext
+public class AppDbContext(DbContextOptions options) : IdentityDbContext<User>(options)
 {
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        => optionsBuilder.UseSqlite("Data Source=app.db");
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

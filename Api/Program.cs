@@ -3,13 +3,13 @@ using Api.Data;
 using Api.Data.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 #region Auth
-
-
 
 var validIssuer = builder.Configuration["JWT:ValidIssuer"];
 var validAudience = builder.Configuration["JWT:ValidAudience"];
@@ -61,7 +61,8 @@ builder.Services.AddCors(policy =>
         .AllowAnyMethod());
 });
 
-
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+builder.Services.AddAuthorizationPolicies();
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 
@@ -102,7 +103,7 @@ using (var scope = app.Services.CreateScope())
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 app.UseCors("CorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
