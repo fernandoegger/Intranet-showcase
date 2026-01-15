@@ -110,5 +110,5 @@ app.MapControllers();
 
 app.MapGet("/", () => Results.Ok());
 app.MapGet("/auth", () => Results.Ok("Auth Service is running.")).RequireAuthorization();
-
+ 
 app.Run();
