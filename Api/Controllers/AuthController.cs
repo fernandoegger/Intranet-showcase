@@ -16,6 +16,7 @@ namespace Api.Controllers;
 public class AuthController(
     UserManager<User> userManager,
     SignInManager<User> signInManager,
+    IEmailSender<User> emailSender,
     IConfiguration configuration)
     : ControllerBase
 {
@@ -30,70 +31,71 @@ public class AuthController(
         };
 
         await userManager.CreateAsync(user, registerRequest.Password);
-        
+
         var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
         
-        var registerResponse = new Shared.Dto.Responses.RegisterResponse
-        {
-            UserId = user.Id,
-            EmailConfirmationToken = encodedToken
-        };
-
-        return Ok(ApiResponse<RegisterResponse>.Success(registerResponse,"Registro bem-sucedido. Verifique seu e-mail para confirmar a conta."));
+        var callbackUrl =
+            $"{configuration["FrontendUrl:ConfirmEmailUrl"]}?userId={user.Id}&token={encodedToken}";
+        
+        await emailSender.SendConfirmationLinkAsync(user, user.Email, callbackUrl);
+        
+        return Ok(ApiResponse<object>.Success(null, "Registro bem-sucedido. Verifique seu e-mail para confirmar a conta."));
     }
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] Shared.Dto.Requests.LoginRequest loginRequest)
     {
         var user = await userManager.FindByEmailAsync(loginRequest.Email);
-        
-        if(user is null)
+
+        if (user is null)
             return Unauthorized(ApiResponse<object>.Error("E-mail ou senha inválidos."));
-        
+
         var passwordCheck = await userManager.CheckPasswordAsync(user, loginRequest.Password);
-        
-        if(!passwordCheck)
+
+        if (!passwordCheck)
             return Unauthorized(ApiResponse<object>.Error("E-mail ou senha inválidos."));
-        
-        if(!user.EmailConfirmed)
-            return Unauthorized(ApiResponse<object>.Error("E-mail não confirmado. Por favor, confirme seu e-mail antes de fazer login."));
-       
+
+        if (!user.EmailConfirmed)
+            return Unauthorized(
+                ApiResponse<object>.Error(
+                    "E-mail não confirmado. Por favor, confirme seu e-mail antes de fazer login."));
+
         var signChecker = await signInManager.CheckPasswordSignInAsync(user, loginRequest.Password, false);
-        
-        if(!signChecker.Succeeded)
+
+        if (!signChecker.Succeeded)
             return Unauthorized(ApiResponse<object>.Error("E-mail ou senha inválidos."));
-        
+
         var acessToken = await GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
-        
+
         user.RefreshTokenExpiryTime = loginRequest.RememberMe
             ? DateTime.UtcNow.AddDays(30)
             : DateTime.UtcNow.AddHours(8);
-        
+
         user.RefreshToken = refreshToken;
         await userManager.UpdateAsync(user);
-        
+
         var tokenResponse = new Shared.Dto.Responses.TokenReponse
         {
             AccessToken = acessToken,
             RefreshToken = refreshToken
         };
-        
+
         return Ok(ApiResponse<TokenReponse>.Success(tokenResponse, "Login realizado com sucesso."));
     }
-    
+
     [HttpGet("confirm-email")]
     public async Task<IActionResult> ConfirmEmail(string userId, string token)
     {
         if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(token))
             return BadRequest(ApiResponse<object>.Error("ID de usuário e token são necessários."));
-        
+
         var user = await userManager.FindByIdAsync(userId);
-        
+
         if (user == null)
             return NotFound(ApiResponse<object>.Error("Usuário não encontrado."));
-        
+
         try
         {
             var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token));
@@ -102,14 +104,16 @@ public class AuthController(
             if (result.Succeeded)
                 return Ok(ApiResponse<object>.Success(null, "E-mail confirmado com sucesso!"));
 
-            return BadRequest(ApiResponse<object>.Error("Erro ao confirmar o e-mail. O token pode ser inválido ou já ter sido usado."));
+            return BadRequest(
+                ApiResponse<object>.Error(
+                    "Erro ao confirmar o e-mail. O token pode ser inválido ou já ter sido usado."));
         }
         catch (FormatException)
         {
             return BadRequest(ApiResponse<object>.Error("O formato do token é inválido."));
         }
     }
-    
+
     private async Task<string> GenerateJwtToken(User user)
     {
         var userRoles = await userManager.GetRolesAsync(user);
@@ -120,12 +124,12 @@ public class AuthController(
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(ClaimTypes.Name, user.UserName!)
         };
-        
+
         claims.AddRange(userRoles.Select(role => new Claim(ClaimTypes.Role, role)));
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["JWT:Secret"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        
+
         var token = new JwtSecurityToken(
             issuer: configuration["JWT:ValidIssuer"],
             audience: configuration["JWT:ValidAudience"],
@@ -136,7 +140,7 @@ public class AuthController(
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
-    
+
     private string GenerateRefreshToken()
     {
         var randomNumber = new byte[64];
@@ -144,4 +148,22 @@ public class AuthController(
         rng.GetBytes(randomNumber);
         return Convert.ToBase64String(randomNumber);
     }
+
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] Shared.Dto.Requests.ForgotPasswordRequest request)
+    {
+        var user = await userManager.FindByEmailAsync(request.Email);
+
+        if (user == null || !await userManager.IsEmailConfirmedAsync(user))
+            return Ok(ApiResponse<object>.Success(null, "Se uma conta com este e-mail existir, um link para redefinição de senha foi enviado."));
+        
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var callbackUrl = $"{configuration["FrontendUrl:ResetPasswordUrl"]}?email={user.Email}&token={encodedToken}";
+        await emailSender.SendPasswordResetLinkAsync(user, user.Email!, callbackUrl);
+
+        return Ok(ApiResponse<object>.Success(null, "Se uma conta com este e-mail existir, um link para redefinição de senha foi enviado."));
+    }
+    
+    
 }
