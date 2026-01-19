@@ -51,13 +51,18 @@ public class AuthController(
         if(user is null)
             return Unauthorized(ApiResponse<object>.Error("E-mail ou senha inválidos."));
         
-        var passwordCheck = await signInManager.CheckPasswordSignInAsync(user, loginRequest.Password, false);
+        var passwordCheck = await userManager.CheckPasswordAsync(user, loginRequest.Password);
         
-        if(!passwordCheck.Succeeded)
+        if(!passwordCheck)
             return Unauthorized(ApiResponse<object>.Error("E-mail ou senha inválidos."));
         
         if(!user.EmailConfirmed)
             return Unauthorized(ApiResponse<object>.Error("E-mail não confirmado. Por favor, confirme seu e-mail antes de fazer login."));
+       
+        var signChecker = await signInManager.CheckPasswordSignInAsync(user, loginRequest.Password, false);
+        
+        if(!signChecker.Succeeded)
+            return Unauthorized(ApiResponse<object>.Error("E-mail ou senha inválidos."));
         
         var acessToken = await GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
@@ -76,6 +81,33 @@ public class AuthController(
         };
         
         return Ok(ApiResponse<TokenReponse>.Success(tokenResponse, "Login realizado com sucesso."));
+    }
+    
+    [HttpGet("confirm-email")]
+    public async Task<IActionResult> ConfirmEmail(string userId, string token)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(token))
+            return BadRequest(ApiResponse<object>.Error("ID de usuário e token são necessários."));
+        
+        var user = await userManager.FindByIdAsync(userId);
+        
+        if (user == null)
+            return NotFound(ApiResponse<object>.Error("Usuário não encontrado."));
+        
+        try
+        {
+            var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token));
+            var result = await userManager.ConfirmEmailAsync(user, decodedToken);
+
+            if (result.Succeeded)
+                return Ok(ApiResponse<object>.Success(null, "E-mail confirmado com sucesso!"));
+
+            return BadRequest(ApiResponse<object>.Error("Erro ao confirmar o e-mail. O token pode ser inválido ou já ter sido usado."));
+        }
+        catch (FormatException)
+        {
+            return BadRequest(ApiResponse<object>.Error("O formato do token é inválido."));
+        }
     }
     
     private async Task<string> GenerateJwtToken(User user)
