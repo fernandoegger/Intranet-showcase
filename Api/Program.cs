@@ -1,6 +1,7 @@
 using Api.Auth;
 using Api.Data;
 using Api.Data.Entities;
+using Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -65,6 +66,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connect
 builder.Services.AddAuthorizationPolicies();
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
+builder.Services.AddTransient<IEmailSender<User>, EmailSenderService>();
 
 var app = builder.Build();
 

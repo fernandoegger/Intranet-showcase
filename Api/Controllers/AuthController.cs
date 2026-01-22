@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using Shared.Dto.Requests;
 using Shared.Dto.Responses;
 
 namespace Api.Controllers;
@@ -21,7 +22,7 @@ public class AuthController(
     : ControllerBase
 {
     [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] Shared.Dto.Requests.RegisterRequest registerRequest)
+    public async Task<IActionResult> Register([FromBody] RegisterRequest registerRequest)
     {
         var user = new User
         {
@@ -44,7 +45,7 @@ public class AuthController(
     }
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] Shared.Dto.Requests.LoginRequest loginRequest)
+    public async Task<IActionResult> Login([FromBody] LoginRequest loginRequest)
     {
         var user = await userManager.FindByEmailAsync(loginRequest.Email);
 
@@ -76,13 +77,13 @@ public class AuthController(
         user.RefreshToken = refreshToken;
         await userManager.UpdateAsync(user);
 
-        var tokenResponse = new Shared.Dto.Responses.TokenReponse
+        var tokenResponse = new TokenResponse
         {
             AccessToken = acessToken,
             RefreshToken = refreshToken
         };
 
-        return Ok(ApiResponse<TokenReponse>.Success(tokenResponse, "Login realizado com sucesso."));
+        return Ok(ApiResponse<TokenResponse>.Success(tokenResponse, "Login realizado com sucesso."));
     }
 
     [HttpGet("confirm-email")]
@@ -150,7 +151,7 @@ public class AuthController(
     }
 
     [HttpPost("forgot-password")]
-    public async Task<IActionResult> ForgotPassword([FromBody] Shared.Dto.Requests.ForgotPasswordRequest request)
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
         var user = await userManager.FindByEmailAsync(request.Email);
 
@@ -164,6 +165,100 @@ public class AuthController(
 
         return Ok(ApiResponse<object>.Success(null, "Se uma conta com este e-mail existir, um link para redefinição de senha foi enviado."));
     }
+    
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        var user = await userManager.FindByEmailAsync(request.Email);
+        
+        if (user == null)
+            return BadRequest(ApiResponse<object>.Error("Usuário não encontrado."));
+        
+        try
+        {
+            var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(request.Token));
+            var result = await userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
+
+            if (result.Succeeded)
+                return Ok(ApiResponse<object>.Success(null, "Senha redefinida com sucesso."));
+        
+            var errors = new Dictionary<string, List<string>>();
+            foreach (var error in result.Errors)
+            {
+                if (!errors.ContainsKey(error.Code))
+                {
+                    errors[error.Code] = new List<string>();
+                }
+                errors[error.Code].Add(error.Description);
+            }
+            return BadRequest(ApiResponse<object>.Error("Erro ao redefinir a senha.", errors));
+        }
+        catch (FormatException)
+        {
+            return BadRequest(ApiResponse<object>.Error("O formato do token é inválido."));
+        }
+    }
+    
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken([FromBody] TokenRequest request)
+    {
+        var principal = GetPrincipalFromExpiredToken(request.AccessToken);
+    
+        var username = principal?.Identity?.Name;
+        if (username is null)
+            return BadRequest(ApiResponse<object>.Error("Access Token inválido ou malformado."));
+    
+        var user = await userManager.FindByNameAsync(username);
+
+        if (user == null || user.RefreshToken != request.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+            return BadRequest(ApiResponse<object>.Error("Refresh Token inválido ou expirado. Por favor, faça login novamente."));
+        
+        var newAccessToken = await GenerateJwtToken(user);
+        var newRefreshToken = GenerateRefreshToken();
+    
+        user.RefreshToken = newRefreshToken;
+        await userManager.UpdateAsync(user);
+    
+        var tokenResponse = new TokenResponse
+        {
+            AccessToken = newAccessToken,
+            RefreshToken = newRefreshToken
+        };
+
+        return Ok(ApiResponse<TokenResponse>.Success(tokenResponse));
+    }
+    
+    private ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+    {
+        var tokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateAudience = true,
+            ValidateIssuer = true,
+            ValidAudience = configuration["JWT:ValidAudience"],
+            ValidIssuer = configuration["JWT:ValidIssuer"],
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["JWT:Secret"]!)),
+            ValidateLifetime = false 
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+    
+        try
+        {
+            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out var securityToken);
+        
+            if (securityToken is not JwtSecurityToken jwtSecurityToken || 
+                !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                return null;
+
+            return principal;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     
     
 }
