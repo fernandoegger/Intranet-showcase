@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Api.Data.Mappings;
 
-public class Usermap : IEntityTypeConfiguration<User>
+public class UserMap : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
@@ -38,6 +38,19 @@ public class Usermap : IEntityTypeConfiguration<User>
 
         builder.Property(u => u.RefreshTokenExpiryTime)
             .HasColumnName("RefreshTokenExpiryTime")
+            .IsRequired();
+        
+        builder.Property(u => u.Registration)
+            .HasColumnName("Registration")
+            .IsRequired();
+
+        builder.HasOne(u => u.Department)
+            .WithMany()
+            .HasForeignKey(u => u.DepartmentId)
+            .IsRequired();
+        
+        builder.Property(u => u.IsActive)
+            .HasColumnName("IsActive")
             .IsRequired();
     }
 }

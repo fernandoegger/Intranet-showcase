@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
-using Shared.Dto.Requests;
-using Shared.Dto.Responses;
+using Shared.Dto.Auth.Requests;
+using Shared.Dto.Auth.Responses;
 
 namespace Api.Controllers;
 

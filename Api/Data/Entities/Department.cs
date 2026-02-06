@@ -1,10 +1,8 @@
 namespace Api.Data.Entities;
 
-public class Department
+public class Department: EntityBase
 {
-    public int Id { get; set; }
-    public Guid Uid { get; set; } = Guid.NewGuid();
     public string Name { get; set; }
-    public User Manager { get; set; }
-    public int ManagerId { get; set; }
+    public ICollection<User> Managers { get; set; }
+    public ICollection<Request> Requests { get; set; }
 }
